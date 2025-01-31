@@ -183,6 +183,7 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
       duration = const Duration();
       secondsCounter = 0;
     });
+    graceTimer = 0;
   }
 
   void _startRecording() {
@@ -191,7 +192,6 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
 
     _timer = Timer.periodic(const Duration(milliseconds: _expectAudioLength),
         (timer) {
-      // classify here
       _runInference();
     });
     setState(() {
@@ -216,8 +216,11 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
   void _activateFeature() {
     if (isRecording) {
       _stopRecording();
+      _stopTimer();
+      graceTimer = 0;
     } else {
       _startRecording();
+      _startTimer();
     }
 
     activated = !activated;
@@ -230,7 +233,31 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
     );
   }
 
+  int simulationDuration = 45;
+  DateTime? startSimulation;
+  bool isSimulatedMode = false; // set it to False if not testing
+
   Future<void> _runInference() async {
+    if (isSimulatedMode) {
+      startSimulation ??= DateTime.now();
+
+      final secondsElapsed =
+          DateTime.now().difference(startSimulation!).inSeconds;
+
+      print(
+          "Simulated Mode: $isSimulatedMode, Seconds Elapsed: ${DateTime.now().difference(startSimulation!).inSeconds}");
+
+      if (secondsElapsed < simulationDuration) {
+        _classification = [MapEntry("Background Noise", 0.9)];
+      } else {
+        _classification = [MapEntry("Piano Sound", 0.9)];
+      }
+
+      _checkAudio();
+      return;
+    }
+
+    // ----If we are not simulating, the real inference will run below ----
     Float32List inputArray = await _getAudioFloatArray();
     final result =
         await _helper.inference(inputArray.sublist(0, _requiredInputBuffer));
@@ -244,17 +271,32 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
     _checkAudio();
   }
 
+  String detectionStatus = "No sound detected";
+  double graceTimer = 0;
+
   void _checkAudio() async {
     String recognizedLabel = _classification[0].key;
     double confidence = _classification[0].value;
     print('Recognized: $recognizedLabel, Confidence: $confidence');
 
-    // Check if the recognized label indicates music and the confidence is high enough
     if (recognizedLabel == 'Piano Sound' && confidence > 0.4) {
+      setState(() {
+        detectionStatus = "Piano Sound detected!";
+      });
+      graceTimer = 0;
       _startTimer(); // Start the timer if music is detected
-    } else if (confidence > 0.4) { //Background noise detected
-      _stopTimer(); // Stop the timer if it's background noise
+    } else if (confidence > 0.4) {  // background noise
+      setState(() {
+        detectionStatus = "Background noise detected.";
+      });
+      graceTimer += _expectAudioLength / 1000;
+      print(graceTimer);
+      if (graceTimer > 30) {
+        _stopTimer(); // Stop the timer if it's background noise
+        graceTimer = 0;
+      }
     }
+    // delete the else statement that says no sound detected
   }
 
   @override
@@ -291,24 +333,21 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                 ),
                 Text(
                   '${duration.inHours.toString().padLeft(2, '0')}:${(duration.inMinutes % 60).toString().padLeft(2, '0')}:${(duration.inSeconds % 60).toString().padLeft(2, '0')}',
-                  style: const TextStyle(fontSize: 48, color: Colors.white),
+                  style: const TextStyle(fontSize: 48, color: Colors.black),
                 ),
               ],
+            ),
+            const SizedBox(height: 20),
+            Text(
+              detectionStatus,
+              style: const TextStyle(fontSize: 18, color: Colors.black),
+              textAlign: TextAlign.center,
             ),
             const Spacer(flex: 1),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                ElevatedButton(
-                  onPressed: isRunning ? _stopTimer : _startTimer,
-                  child: Text(isRunning ? 'Stop' : 'Start',
-                      style: TextStyle(color: Colors.black)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue, // Dark blue color
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 32, vertical: 16),
-                  ),
-                ),
+                // delete the start and stop timer since it is useless
                 const SizedBox(width: 10),
                 ElevatedButton(
                   onPressed: _resetTimer,
@@ -339,57 +378,4 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
       ),
     );
   }
-
-// @override
-// Widget build(BuildContext context) {
-//   return Scaffold(
-//     backgroundColor: Colors.white,
-//     appBar: AppBar(
-//       title: Text(widget.title),
-//       backgroundColor: Colors.black.withOpacity(0.5),
-//     ),
-//     body: _buildBody(),
-//   );
-// }
-//
-// Widget _buildBody() {
-//   if (_showError) {
-//     return const Center(
-//       child: Text(
-//         "Audio recording permission required for audio classification",
-//         textAlign: TextAlign.center,
-//       ),
-//     );
-//   } else {
-//     return ListView.separated(
-//       padding: const EdgeInsets.all(10),
-//       physics: const BouncingScrollPhysics(),
-//       shrinkWrap: true,
-//       itemCount: _classification.length,
-//       itemBuilder: (context, index) {
-//         final item = _classification[index];
-//         return Row(
-//           children: [
-//             SizedBox(
-//               width: 200,
-//               child: Text(item.key),
-//             ),
-//             Flexible(
-//                 child: LinearProgressIndicator(
-//               backgroundColor: _backgroundProgressColorList[
-//                   index % _backgroundProgressColorList.length],
-//               color: _primaryProgressColorList[
-//                   index % _primaryProgressColorList.length],
-//               value: item.value,
-//               minHeight: 20,
-//             ))
-//           ],
-//         );
-//       },
-//       separatorBuilder: (BuildContext context, int index) => const SizedBox(
-//         height: 10,
-//       ),
-//     );
-//   }
-// }
 }
